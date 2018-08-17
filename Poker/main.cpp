@@ -6,6 +6,8 @@ using namespace std;
 using namespace cv;
 
 const string imgPath = "./Images/five/";
+const int cardWidth = 200;
+const int cardHeight = 300;
 
 /*
 The function findBiggestRegion looks for the largest white region of the src and copies it to dst.
@@ -98,10 +100,14 @@ void findCardsContours(const Mat& image, vector<vector<Point> > &contours, vecto
 	findContours(binarizedImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 }
 
+int getDistance(const Point& firstPoint, const Point& secondPoint)
+{
+	return (firstPoint.x - secondPoint.x) * (firstPoint.x - secondPoint.x) + (firstPoint.y - secondPoint.y) * (firstPoint.y - secondPoint.y);
+}
 
 int main()
 {
-	Mat img = imread(imgPath + "3.jpg");
+	Mat img = imread(imgPath + "1.jpg");
 	vector<vector<Point> > contours;
 	vector<Vec4i> hierarchy;
 	findCardsContours(img, contours, hierarchy);
@@ -114,6 +120,59 @@ int main()
 		drawContours(result, contours, idx, Scalar(0, 255, 0), 5, 8, hierarchy);
 	}
 
-	imshow("Result", result);
-	waitKey();
+	//Approximate contours
+	vector<vector<Point> > approximatedContours;
+	vector<Mat> cards;
+	Mat cImg = img.clone();
+	vector<Scalar> color = { Scalar(255, 0, 0), Scalar(0, 255, 0) , Scalar(0, 0, 255) , Scalar(0, 0, 0) };
+	for (int idx = 0; idx < contours.size(); idx++)
+	{
+		vector<Point> approxVector;
+		approxPolyDP(contours[idx], approxVector, 15.0, true);
+		approximatedContours.push_back(approxVector);
+		
+		if (approxVector.size() == 4)
+		{
+			int dist1 = getDistance(approxVector[0], approxVector[1]);
+			int dist2 = getDistance(approxVector[1], approxVector[2]);
+			Point2f dstPTPoints[4], srcPTPoints[4];
+			
+			for (int i = 0; i < 4; i++)
+			{
+				circle(cImg, approxVector[i], 5, color[i], 2);
+				srcPTPoints[i] = approxVector[i];
+			}
+
+			dstPTPoints[0] = Point2f(0, 0);
+			dstPTPoints[2] = Point2f(cardWidth, cardHeight);
+
+
+			if (dist1 < dist2)
+			{
+				dstPTPoints[1] = Point2f(cardWidth, 0);
+				dstPTPoints[3] = Point2f(0, cardHeight);
+			}
+			else
+			{
+				dstPTPoints[1] = Point2f(0, cardHeight);
+				dstPTPoints[3] = Point2f(cardWidth, 0);
+			}
+
+			Mat PTMatrix = getPerspectiveTransform(srcPTPoints, dstPTPoints);
+			Mat extractedCardImg = Mat::zeros(Size(cardWidth, cardHeight), CV_8UC3);
+			warpPerspective(img, extractedCardImg, PTMatrix, extractedCardImg.size());
+
+			cards.push_back(extractedCardImg);
+		}
+	}
+
+	result = cards[0].clone();
+	for (int idx = 1; idx < cards.size(); idx++)
+	{
+		hconcat(vector<Mat>{result, cards[idx]}, result);
+	}
+	cv::imshow("Image with contours", cImg);
+	cv::imshow("Origin image", img);
+	cv::imshow("Result", result);
+	cv::waitKey();
 }
