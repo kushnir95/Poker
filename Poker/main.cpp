@@ -1,17 +1,17 @@
 #include <iostream>
+#include <algorithm>
 #include <opencv2/opencv.hpp>
 
 using namespace std;
 using namespace cv;
 
-const string imgPath = "./Images/";
-
+const string imgPath = "./Images/five/";
 
 /*
-	The function findBiggestRegion looks for the largest white region of the src and copies it to dst.
+The function findBiggestRegion looks for the largest white region of the src and copies it to dst.
 */
 
-void findLargestRegion(Mat &src, Mat &dst)
+void findRegions(Mat &src, Mat &dst, int amountOfRegions)
 {
 	Mat components = Mat::zeros(src.size(), CV_16UC1);
 	int componentIdx = 0;
@@ -53,78 +53,67 @@ void findLargestRegion(Mat &src, Mat &dst)
 		}
 	}
 
+	Mat tmp = src.clone();
+
 	if (componentsInfo.size() > 0)
 	{
 		sort(componentsInfo.begin(), componentsInfo.end(), [](const pair<int, int> &a, const pair<int, int> &b) {
 			return a.second > b.second;
 		});
 	}
-	
-	Mat tmp = Mat::zeros(src.size(), CV_8UC1);
+	else
+	{
+		dst = tmp.clone();
+		return;
+	}
+
+
+	set<int> interestRegions;
+	for (int i = 0; i < min((int)componentsInfo.size(), amountOfRegions); i++)
+	{
+		interestRegions.insert(componentsInfo[i].first);
+	}
 
 	for (int x = 0; x < src.size().width; x++)
 	{
 		for (int y = 0; y < src.size().height; y++)
 		{
-			if (components.at<ushort>(y, x) == componentsInfo[0].first)
+			if (interestRegions.find(components.at<ushort>(y, x)) == interestRegions.end())
 			{
-				tmp.at<uchar>(y, x) = 255;
+				tmp.at<uchar>(y, x) = 0;
 			}
 		}
 	}
 	dst = tmp.clone();
 }
 
+void findCardsContours(const Mat& image, vector<vector<Point> > &contours, vector<Vec4i> &hierarchy) {
+	Mat mask;
+	cvtColor(image, mask, cv::COLOR_BGR2YCrCb);
+	vector<Mat> mask_planes;
+	split(mask, mask_planes);
+	Mat binarizedImg;
+	threshold(mask_planes[0], binarizedImg, 175, 255, CV_THRESH_BINARY | CV_THRESH_OTSU);
+	findRegions(binarizedImg, binarizedImg, 5);
+	findContours(binarizedImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+}
+
+
 int main()
 {
 	Mat img = imread(imgPath + "3.jpg");
-	resize(img, img, cv::Size(0, 0), 0.2, 0.2);
-	
-	Mat imgBlurred;
-	GaussianBlur(img, imgBlurred, Size(3, 3), 1);
-	
-	Mat imgGray;
-	cvtColor(imgBlurred, imgGray, CV_BGR2GRAY);
-	
-	Mat imgBin;
-	threshold(imgGray, imgBin, 125, 255, THRESH_BINARY | THRESH_OTSU);
+	vector<vector<Point> > contours;
+	vector<Vec4i> hierarchy;
+	findCardsContours(img, contours, hierarchy);
 
-	Mat clearedImg;
-	int kernelSize = 1;
-	auto kernel = getStructuringElement(CV_SHAPE_ELLIPSE, Size(2 * kernelSize + 1, 2 * kernelSize + 1));
-	morphologyEx(imgBin, clearedImg, CV_MOP_CLOSE, kernel);
-	
-	findLargestRegion(clearedImg, clearedImg);
-	// paint the largest region of clearedImg(card) in white
-	for (int x = 0; x < clearedImg.size().width; x++)
+	//Drawing contours
+	Mat result = img.clone();
+	int idx = 0;
+	for (; idx >= 0; idx = hierarchy[idx][0])
 	{
-		pair<int, int> whiteSegment = { -1,-1 };
-		for (int y = 0; y < clearedImg.size().height; y++)
-		{
-			if (*clearedImg.ptr<uchar>(y, x) > 0)
-			{
-				if (whiteSegment.first == -1)
-				{
-					whiteSegment = { y, y };
-				}
-				else
-				{
-					whiteSegment.second = y;
-				}
-			}
-		}
-		
-		for (int y = whiteSegment.first + 1; y < whiteSegment.second; y++)
-		{
-			clearedImg.at<uchar>(y, x) = 255;
-		}
+		drawContours(result, contours, idx, Scalar(0, 255, 0), 5, 8, hierarchy);
 	}
 
-	Mat cardMask = clearedImg.clone();
-	Mat result = Mat::zeros(img.size(), CV_8UC1);
-	img.copyTo(result, cardMask);
-	hconcat(vector<Mat>{img, result}, result);
-	imshow("Image", result);
-
+	imshow("Result", result);
 	waitKey();
 }
