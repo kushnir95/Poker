@@ -6,18 +6,38 @@ using namespace std;
 using namespace cv;
 
 const string imgPath = "./Images/five/";
-const string trainsetDir = "./dataset";
+const string trainsetDir = "./trainset";
 const int cardWidth = 200;
 const int cardHeight = 300;
 const int origialSuitWidth = 40;
 const int originalSuitHeight = 35;
 const int scaledSuitWidth = 20;
 const int scaledSuitHeight = 20;
-const int nclasses = 4;
+const int nclasses = 2;
 const string  suitNames[] = { "Spade",  "Club", "Heart", "Diamond"};
 
 Mat trainX, trainY;
 vector<int> trainLabels;
+
+//Function getCardColor returns color of the card(black - 0; red - 1)
+int getCardColor(const Mat& cardImg)
+{
+	const int redThreshold = 50;
+	int goodPixelsAmount = 0;
+	for (int y = 0; y < cardImg.size().height; y++)
+	{
+		for (int x = 0; x < cardImg.size().width; x++)
+		{
+			Vec3b currentPixel = cardImg.at<Vec3b>(y, x);
+			if (currentPixel.val[2] >= redThreshold)
+			{
+				goodPixelsAmount++;
+			}
+		}
+	}
+
+	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.98);
+}
 
 void readData(const string& dir, const vector< pair<string, int> >& dirInfo, Mat& features, Mat& targets, vector<int>& labels)
 {
@@ -165,36 +185,76 @@ int getDistance(const Point& firstPoint, const Point& secondPoint)
 
 int main()
 {
+	Mat suitsCoverImg[4], suitsCoverMask[4];
+
+	suitsCoverImg[0] = imread("./images/spade.jpg");
+	suitsCoverImg[1] = imread("./images/club.png");
+	suitsCoverImg[2] = imread("./images/heart.png");
+	suitsCoverImg[3] = imread("./images/diamond.jpg");
+
+	suitsCoverMask[0] = imread("./images/spade_mask.jpg");
+	suitsCoverMask[1] = imread("./images/club_mask.png");
+	suitsCoverMask[2] = imread("./images/heart_mask.png");
+	suitsCoverMask[3] = imread("./images/diamond_mask.jpg");
+
+	for (int idx = 0; idx < 4; idx++)
+	{
+		resize(suitsCoverImg[idx], suitsCoverImg[idx], Size(cardWidth, cardHeight));
+		resize(suitsCoverMask[idx], suitsCoverMask[idx], Size(cardWidth, cardHeight));
+	}
+
 	//Creating neural network for recognizing suits
 
 	vector<pair<string, int>> trainDirInfo = {
 		{ "1", 1000 },
-		{ "2", 1000 },
-		{ "3", 1000 },
-		{ "4", 1000 }
+		{ "2", 1000 }
 	};
 
-	cout << "Reading train data..." << endl;
+	cout << "Reading train data(1)..." << endl;
 	readData(trainsetDir, trainDirInfo, trainX, trainY, trainLabels);
 	
-	Ptr<cv::ml::ANN_MLP> ANN = cv::ml::ANN_MLP::create();
+	Ptr<cv::ml::ANN_MLP> ANNBlackCard = cv::ml::ANN_MLP::create();
 	Mat_<int> layers(5, 1);
 	layers(0) = scaledSuitWidth * scaledSuitHeight;
-	layers(1) = 100;
-	layers(2) = 50;
-	layers(3) = 20;
+	layers(1) = 300;
+	layers(2) = 100;
+	layers(3) = 50;
 	layers(4) = nclasses;
 
-	ANN->setLayerSizes(layers);
-	ANN->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
-	ANN->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
-	ANN->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
+	ANNBlackCard->setLayerSizes(layers);
+	ANNBlackCard->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
+	ANNBlackCard->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
+	ANNBlackCard->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
 
-	std::cout << "Start training network..." << std::endl;
+	std::cout << "Start training network(1)..." << std::endl;
 
-	ANN->train(trainX, ml::ROW_SAMPLE, trainY);
+	ANNBlackCard->train(trainX, ml::ROW_SAMPLE, trainY);
 
-	std::cout << "Finish training network..." << std::endl;
+	std::cout << "Finish training network(1)..." << std::endl;
+
+	trainDirInfo = 
+	{
+		{"3", 1000},
+		{"4", 1000}
+	};
+
+	cout << "Reading train data(2)..." << endl;
+	readData(trainsetDir, trainDirInfo, trainX, trainY, trainLabels);
+
+	Ptr<cv::ml::ANN_MLP> ANNRedCard = cv::ml::ANN_MLP::create();
+
+	ANNRedCard->setLayerSizes(layers);
+	ANNRedCard->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
+	ANNRedCard->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
+	ANNRedCard->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
+
+	std::cout << "Start training network(2)..." << std::endl;
+
+	ANNRedCard->train(trainX, ml::ROW_SAMPLE, trainY);
+
+	std::cout << "Finish training network(2)..." << std::endl;
+
+
 
 	VideoCapture cap(1);
 	Mat img, cameraImg;
@@ -221,7 +281,6 @@ int main()
 			vector<Mat> cards;
 			Mat cImg = img.clone();
 			vector<Scalar> color = { Scalar(255, 0, 0), Scalar(0, 255, 0) , Scalar(0, 0, 255) , Scalar(0, 0, 0) };
-			cout << "=========================" << endl;
 			for (int idx = 0; idx < contours.size(); idx++)
 			{
 				vector<Point> approxVector;
@@ -239,7 +298,6 @@ int main()
 						swap(approxVector[2], approxVector[3]);
 					}
 
-					cout << setprecision(3) << fixed << vectorsMult << endl;
 					Point2f dstPTPoints[4], srcPTPoints[4];
 
 					for (int i = 0; i < 4; i++)
@@ -277,25 +335,23 @@ int main()
 			vector<Mat> suitsImg;
 			Mat currentCard = cards[0].clone();
 			suitsImg.push_back(currentCard(Rect(0, 60, origialSuitWidth, originalSuitHeight)));
-			
-			result = currentCard.clone();
+
 			for (int idx = 1; idx < cards.size(); idx++)
 			{
 				currentCard = cards[idx].clone();
 				suitsImg.push_back(currentCard(Rect(0, 60, origialSuitWidth, originalSuitHeight)));
-				
-				hconcat(vector<Mat>{result, currentCard}, result);
 			}
 
-			resize(cImg, cImg, Size(result.size().width, 0.5 * result.size().width * cImg.size().height / cImg.size().width));
-			vconcat(vector<Mat>{cImg, result}, result);
-			cv::imshow("Result", result);
+
+			
 			
 			Mat suitsData = Mat::zeros(Size(scaledSuitWidth * scaledSuitHeight, suitsImg.size()), CV_32FC1);
 			
 			Mat suitsConcat;
+			vector<int> cardsColors;
 			for (int idx = 0; idx < suitsImg.size(); idx++)
 			{
+				cardsColors.push_back(getCardColor(suitsImg[idx]));
 				preprocessSuitImage(suitsImg[idx]);
 				if (idx == 0)
 				{
@@ -316,12 +372,33 @@ int main()
 
 			cv::imshow("Suits", suitsConcat);
 
+			
 			for (int idx = 0; idx < suitsImg.size(); idx++)
 			{
-				int predictedSuit = ANN->predict(suitsData.row(idx), noArray());
-				cout << "Predicted suit for card #" << idx + 1 << " " << suitNames[predictedSuit]<<"(" << predictedSuit << ")" << endl;
+				int predictedSuit;
+				if (cardsColors[idx] == 0)
+				{
+					predictedSuit = ANNBlackCard->predict(suitsData.row(idx), noArray());
+				}
+				else
+				{
+					predictedSuit = ANNRedCard->predict(suitsData.row(idx), noArray()) + 2;
+				}
+				
+				suitsCoverImg[predictedSuit].copyTo(cards[idx], suitsCoverMask[predictedSuit]);
+				cout << "Predicted suit for card #" << idx + 1 << " "  << predictedSuit  << endl;
 			}
-			
+
+			result = cards[0].clone();
+			for (int idx = 1; idx < cards.size(); idx++)
+			{
+				currentCard = cards[idx].clone();
+				hconcat(vector<Mat>{result, currentCard}, result);
+			}
+
+			resize(cImg, cImg, Size(result.size().width, 0.5 * result.size().width * cImg.size().height / cImg.size().width));
+			vconcat(vector<Mat>{cImg, result}, result);
+			cv::imshow("Result", result);
 		}
 		cap >> cameraImg;
 		cv::imshow("Camera", cameraImg);	
