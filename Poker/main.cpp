@@ -1,6 +1,7 @@
 #include <iostream>
 #include <algorithm>
 #include <opencv2/opencv.hpp>
+#include "Features_Mapper.h"
 
 using namespace std;
 using namespace cv;
@@ -11,7 +12,7 @@ const string trainsetRanksDir = "./trainset/ranks";
 const int cardWidth = 200;
 const int cardHeight = 300;
 const int origialSuitWidth = 40;
-const int originalSuitHeight = 35;
+const int originalSuitHeight = 40;
 const int scaledSuitWidth = 20;
 const int scaledSuitHeight = 20;
 
@@ -23,7 +24,7 @@ const int nRank = 4;
 
 const int nclasses = 2;
 const string  suitNames[] = { "Spade",  "Club", "Heart", "Diamond"};
-const string rankNames[] = { "Jack", "Queen", "King", "Ace" };
+const string rankNames[] = {"Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Jack", "Queen", "King", "Ace" };
 
 Mat trainX, trainY;
 vector<int> trainLabels;
@@ -48,82 +49,18 @@ int getCardColor(const Mat& cardImg)
 		}
 	}
 
-	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.15);
+	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.1);
 }
 
-void readData(const string& dir, const vector< pair<string, int> >& dirInfo, Mat& features, Mat& targets, vector<int>& labels)
+void preprocessImage(Mat &img, const Size &sz)
 {
-	vector<Mat> images;
-
-	labels.clear();
-	for (int i = 0; i < dirInfo.size(); i++)
-	{
-		for (int idx = 1; idx <= dirInfo[i].second; idx++)
-		{
-			string imgPath = dir + "/" + dirInfo[i].first + "/" + to_string(idx) + ".jpg";
-			Mat img = imread(imgPath);
-			Mat grayImg;
-			cvtColor(img, grayImg, CV_BGR2GRAY);
-			images.push_back(grayImg);
-			labels.push_back(i);
-		}
-	}
-
-	features = Mat::zeros(Size(scaledSuitWidth * scaledSuitHeight, images.size()), CV_32FC1);
-	targets = Mat::zeros(Size(nclasses, images.size()), CV_32FC1);
-
-	int idx = 0;
-	for (Mat currentInstance : images)
-	{
-		for (int y = 0; y < scaledSuitHeight; y++)
-		{
-			for (int x = 0; x < scaledSuitWidth; x++)
-			{
-				features.at<float>(idx, y * scaledSuitWidth + x) = currentInstance.at<uchar>(y, x);
-			}
-		}
-
-		targets.at<float>(idx, labels[idx]) = 1.0;
-		idx++;
-	}
+	Mat grayImg;
+	cvtColor(img, grayImg, CV_BGR2GRAY);
+	threshold(grayImg, grayImg, 100, 255, CV_THRESH_BINARY_INV);
+	resize(grayImg, grayImg, Size(sz.width, sz.height));
+	img = grayImg.clone();
 }
 
-void readRankTrainset(const string& dir, const vector< pair<string, int> >& dirInfo, Mat& features, Mat& targets, vector<int>& labels)
-{
-	vector<Mat> images;
-
-	labels.clear();
-	for (int i = 0; i < dirInfo.size(); i++)
-	{
-		for (int idx = 1; idx <= dirInfo[i].second; idx++)
-		{
-			string imgPath = dir + "/" + dirInfo[i].first + "/" + to_string(idx) + ".jpg";
-			Mat img = imread(imgPath);
-			Mat grayImg;
-			cvtColor(img, grayImg, CV_BGR2GRAY);
-			images.push_back(grayImg);
-			labels.push_back(i);
-		}
-	}
-
-	features = Mat::zeros(Size(scaledRankWidth * scaledRankHeight, images.size()), CV_32FC1);
-	targets = Mat::zeros(Size(nRank, images.size()), CV_32FC1);
-
-	int idx = 0;
-	for (Mat currentInstance : images)
-	{
-		for (int y = 0; y < scaledRankHeight; y++)
-		{
-			for (int x = 0; x < scaledRankWidth; x++)
-			{
-				features.at<float>(idx, y * scaledRankWidth + x) = currentInstance.at<uchar>(y, x);
-			}
-		}
-
-		targets.at<float>(idx, labels[idx]) = 1.0;
-		idx++;
-	}
-}
 
 void preprocessRankImage(Mat &rank)
 {
@@ -240,74 +177,91 @@ int getDistance(const Point& firstPoint, const Point& secondPoint)
 	return (firstPoint.x - secondPoint.x) * (firstPoint.x - secondPoint.x) + (firstPoint.y - secondPoint.y) * (firstPoint.y - secondPoint.y);
 }
 
-
-void extractCards(const Mat& src, vector<Mat>& cards)
+Mat generateImg(Mat image, bool rotation, bool shift, int angle = 0, int maxShiftX = 0, int maxShiftY = 0)
 {
-
-	cards.clear();
-
-	vector<vector<Point> > contours;
-	vector<Vec4i> hierarchy;
-	findCardsContours(src, contours, hierarchy);
-
-	//Drawing contours
-
-	//Mat result = img.clone();
-	//int idx = 0;
-	//for (; idx >= 0; idx = hierarchy[idx][0])
-	//{
-	//	drawContours(result, contours, idx, Scalar(0, 255, 0), 5, 8, hierarchy);
-	//}
-
-	for (int idx = 0; idx < contours.size(); idx++)
+	//rotate image
+	if (rotation)
 	{
-		vector<Point> approxVector;
-		approxPolyDP(contours[idx], approxVector, 15.0, true);
-
-		if (approxVector.size() == 4)
-		{
-			double vectorsMult = (approxVector[2].x - approxVector[0].x) * (approxVector[3].x - approxVector[1].x) + (approxVector[3].y - approxVector[1].y) * (approxVector[2].y - approxVector[0].y);
-
-			if (vectorsMult > 0.0)
-			{
-				swap(approxVector[0], approxVector[1]);
-				swap(approxVector[1], approxVector[2]);
-				swap(approxVector[2], approxVector[3]);
-			}
-
-			Point2f dstPTPoints[4], srcPTPoints[4];
-
-			for (int i = 0; i < 4; i++)
-			{
-				srcPTPoints[i] = approxVector[i];
-			}
-
-			int dist1 = getDistance(approxVector[0], approxVector[1]);
-			int dist2 = getDistance(approxVector[1], approxVector[2]);
-
-			dstPTPoints[0] = Point2f(0, 0);
-			dstPTPoints[2] = Point2f(cardWidth, cardHeight);
-
-
-			if (dist1 < dist2)
-			{
-				dstPTPoints[1] = Point2f(cardWidth, 0);
-				dstPTPoints[3] = Point2f(0, cardHeight);
-			}
-			else
-			{
-				dstPTPoints[1] = Point2f(0, cardHeight);
-				dstPTPoints[3] = Point2f(cardWidth, 0);
-			}
-
-			Mat PTMatrix = getPerspectiveTransform(srcPTPoints, dstPTPoints);
-			Mat extractedCardImg = Mat::zeros(Size(cardWidth, cardHeight), CV_8UC3);
-			warpPerspective(src, extractedCardImg, PTMatrix, extractedCardImg.size());
-
-			cards.push_back(extractedCardImg);
-		}
+		double angleValue = rand() % (angle + 1);
+		if (rand() % 2 > 0) angleValue *= -1.0;
+		Mat rotationMatrix2D = getRotationMatrix2D(Point2f((image.rows - 1) / 2, (image.cols - 1) / 2), angleValue, 1.0);
+		warpAffine(image, image, rotationMatrix2D, image.size());
 	}
 
+	if (shift)
+	{
+		int shiftX = rand() % (maxShiftX + 1);
+		int shiftY = rand() % (maxShiftY + 1);
+		Point2f srcTri[3];
+		Point2f dstTri[3];
+
+		srcTri[0] = Point2f(0, 0);
+		srcTri[1] = Point2f(image.cols - 1.f, 0);
+		srcTri[2] = Point2f(0, image.rows - 1.f);
+
+		dstTri[0] = Point2f(0 + shiftX, 0 + shiftY);
+		dstTri[1] = Point2f(image.cols - 1.f + shiftX, 0 + shiftY);
+		dstTri[2] = Point2f(0 + shiftX, image.rows - 1.f + shiftY);
+
+		Mat warpMat = getAffineTransform(srcTri, dstTri);
+		warpAffine(image, image, warpMat, image.size());
+	}
+
+	return image;
+}
+
+Mat formImageData(const Mat& image)
+{
+
+	Mat result = Mat::zeros(Size(image.size().area(), 1), CV_32FC1);
+	int imgWidth = image.size().width;
+	for (int y = 0; y < image.size().height; y++)
+	{
+		for (int x = 0; x < image.size().width; x++)
+		{
+			*result.ptr<float>(0, y * imgWidth + x) = *image.ptr<uchar>(y, x);
+		}
+	}
+	return result;
+}
+
+vector<Mat> generateImgKNN(Mat& image, int nInstances) {
+	vector<Mat> imgs;
+	imgs.push_back(image);
+	for (int k = 0; k < nInstances; k++) {
+		Mat genImg;
+		double angleValue = rand() % (5 + 1);
+		if (rand() % 2 > 0) angleValue *= -1.0;
+
+		Mat rotationMatrix2D = getRotationMatrix2D(Point(image.cols / 2, image.rows / 2), angleValue, 1);
+		warpAffine(image, genImg, rotationMatrix2D, image.size());
+		imgs.push_back(genImg);
+	}
+	return imgs;
+}
+
+int findFrequentClass(vector<int> v)
+{
+	sort(v.begin(), v.end());
+	int counter = 1;
+	pair<int, int> answer = { 1, v[0] };
+	for (int i = 1; i < (int)v.size(); i++)
+	{
+		if (v[i] == v[i - 1])
+		{
+			counter++;
+		}
+		else
+		{
+			counter = 1;
+		}
+
+		if (counter > answer.first)
+		{
+			answer = { counter, v[i] };
+		}
+	}
+	return answer.second;
 }
 
 int main()
@@ -330,108 +284,36 @@ int main()
 		resize(suitsCoverMask[idx], suitsCoverMask[idx], Size(cardWidth, cardHeight));
 	}
 
-	//Creating neural network for recognizing suits
+	FileStorage ffsBlackCard("MLPBlackSuits.xml", FileStorage::READ);
+	Ptr<cv::ml::ANN_MLP> ANNBlackCard = cv::Algorithm::read<cv::ml::ANN_MLP>(ffsBlackCard.root());
 
-	vector<pair<string, int>> trainDirInfo = {
-		{ "1", 1000 },
-		{ "2", 1000 }
-	};
+	FileStorage ffsRedCard("MLPRedSuits.xml", FileStorage::READ);
+	Ptr<cv::ml::ANN_MLP> ANNRedCard = cv::Algorithm::read<cv::ml::ANN_MLP>(ffsRedCard.root());
 
-	cout << "Reading train data(1)..." << endl;
-	readData(trainsetSuitsDir, trainDirInfo, trainX, trainY, trainLabels);
-	
-	Ptr<cv::ml::ANN_MLP> ANNBlackCard = cv::ml::ANN_MLP::create();
-	Mat_<int> layers(5, 1);
-	layers(0) = scaledSuitWidth * scaledSuitHeight;
-	layers(1) = 300;
-	layers(2) = 100;
-	layers(3) = 50;
-	layers(4) = nclasses;
+	FileStorage ffsRank("MLPRank.xml", FileStorage::READ);
+	Ptr<cv::ml::ANN_MLP> ANNCardRank = cv::Algorithm::read<cv::ml::ANN_MLP>(ffsRank.root());
 
-	ANNBlackCard->setLayerSizes(layers);
-	ANNBlackCard->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
-	ANNBlackCard->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
-	ANNBlackCard->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
+	FileStorage ffsKNNSuit("KNNSuits.xml", FileStorage::READ);
+	Ptr<cv::ml::KNearest> KNNCardSuit = cv::ml::StatModel::load<cv::ml::KNearest>("KNNSuits.xml");
 
-	std::cout << "Start training network(1)..." << std::endl;
-
-	ANNBlackCard->train(trainX, ml::ROW_SAMPLE, trainY);
-
-	std::cout << "Finish training network(1)..." << std::endl;
-
-	trainDirInfo = 
-	{
-		{"3", 1000},
-		{"4", 1000}
-	};
-
-	cout << "Reading train data(2)..." << endl;
-	readData(trainsetSuitsDir, trainDirInfo, trainX, trainY, trainLabels);
-
-	Ptr<cv::ml::ANN_MLP> ANNRedCard = cv::ml::ANN_MLP::create();
-
-	ANNRedCard->setLayerSizes(layers);
-	ANNRedCard->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
-	ANNRedCard->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
-	ANNRedCard->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
-
-	std::cout << "Start training network(2)..." << std::endl;
-
-	ANNRedCard->train(trainX, ml::ROW_SAMPLE, trainY);
-
-	std::cout << "Finish training network(2)..." << std::endl;
-
-
-	
-	cout << "Reading train data(3)..." << endl;
-
-	trainDirInfo = {
-		{"1", 1000},
-		{"2", 1000},
-		{"3", 1000},
-		{"4", 1000}
-	};
-
-	readRankTrainset(trainsetRanksDir, trainDirInfo, trainX, trainY, trainLabels);
-
-	Ptr<cv::ml::ANN_MLP> ANNCardRank = cv::ml::ANN_MLP::create();
-	Mat_<int> layers2(5, 1);
-	layers2(0) = scaledRankWidth * scaledRankHeight;
-	layers2(1) = 300;
-	layers2(2) = 100;
-	layers2(3) = 50;
-	layers2(4) = nRank;
-
-	ANNCardRank->setLayerSizes(layers2);
-	ANNCardRank->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1.0, 0.0);
-	ANNCardRank->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 100, 0.0001));
-	ANNCardRank->setTrainMethod(cv::ml::ANN_MLP::BACKPROP, 0.0001);
-
-	std::cout << "Start training network(3)..." << std::endl;
-
-	ANNCardRank->train(trainX, ml::ROW_SAMPLE, trainY);
-
-	std::cout << "Finish training network(3)..." << std::endl;
-	
 	VideoCapture cap(1);
 	Mat img, cameraImg;
 	while (waitKey(30) != 'e')
 	{
 		if (waitKey(500) == 's')
 		{
-			std::cout << "Processing image" << std::endl;
 			cap >> img;
 			vector<vector<Point> > contours;
 			vector<Vec4i> hierarchy;
 			findCardsContours(img, contours, hierarchy);
 
-			//Drawing contours
-			Mat result = img.clone();
-			int idx = 0;
-			for (; idx >= 0; idx = hierarchy[idx][0])
-			{
-				drawContours(result, contours, idx, Scalar(0, 255, 0), 5, 8, hierarchy);
-			}
+			////Drawing contours
+			//Mat result = img.clone();
+			//int idx = 0;
+			//for (; idx >= 0; idx = hierarchy[idx][0])
+			//{
+			//	drawContours(result, contours, idx, Scalar(0, 255, 0), 5, 8, hierarchy);
+			//}
 
 			//Approximate contours
 			vector<vector<Point> > approximatedContours;
@@ -491,8 +373,8 @@ int main()
 			
 			vector<Mat> suitsImg;
 			vector<Mat> ranksImg;
-			Mat currentCard;
 
+			Mat currentCard;
 			for (int idx = 0; idx < cards.size(); idx++)
 			{
 				currentCard = cards[idx].clone();
@@ -500,16 +382,23 @@ int main()
 				suitsImg.push_back(currentCard(Rect(0, originalRankHeight, origialSuitWidth, originalSuitHeight)));
 			}
 			
-			Mat suitsData = Mat::zeros(Size(scaledSuitWidth * scaledSuitHeight, suitsImg.size()), CV_32FC1);
-			Mat ranksData = Mat::zeros(Size(scaledRankWidth * scaledRankHeight, ranksImg.size()), CV_32FC1);
+			//Mat suitsData = Mat::zeros(Size(scaledSuitWidth * scaledSuitHeight, suitsImg.size()), CV_32FC1);
+			//Mat ranksData = Mat::zeros(Size(scaledRankWidth * scaledRankHeight, ranksImg.size()), CV_32FC1);
 
 			Mat suitsConcat;
 			vector<int> cardsColors;
+			vector<Mat> suitDescriptors[5];
 			for (int idx = 0; idx < suitsImg.size(); idx++)
 			{
 				cardsColors.push_back(getCardColor(suitsImg[idx]));
-				preprocessSuitImage(suitsImg[idx]);
-				preprocessRankImage(ranksImg[idx]);
+				vector<Mat> generatedImgKNN = generateImgKNN(suitsImg[idx], 5);
+				for (int idxDescriptor = 0; idxDescriptor < 5; idxDescriptor++)
+				{
+						suitDescriptors[idx].push_back(Features_Mapper::prepare_descriptors(generatedImgKNN[idxDescriptor], 0));
+				}
+				
+				preprocessImage(suitsImg[idx], Size(scaledSuitWidth, scaledSuitHeight));
+				preprocessImage(ranksImg[idx], Size(scaledRankWidth, scaledRankHeight));
 
 				if (idx == 0)
 				{
@@ -520,7 +409,7 @@ int main()
 					hconcat(vector<Mat>{suitsConcat, suitsImg[idx]}, suitsConcat);
 				}
 
-				for (int y = 0; y < scaledSuitHeight; y++)
+				/*for (int y = 0; y < scaledSuitHeight; y++)
 				{
 					for (int x = 0; x < scaledSuitWidth; x++)
 					{
@@ -534,31 +423,58 @@ int main()
 					{
 						*ranksData.ptr<float>(idx, y * scaledRankWidth + x) = *ranksImg[idx].ptr<uchar>(y, x);
 					}
-				}
+				}*/
 			}
-
-			//cv::imshow("Suits", suitsConcat);
 
 			
 			for (int idx = 0; idx < suitsImg.size(); idx++)
 			{
-				int predictedSuit;
+				vector<int> suitPredictions;
+
+				int ANNPredictedSuit;
 				if (cardsColors[idx] == 0)
 				{
-					predictedSuit = ANNBlackCard->predict(suitsData.row(idx), noArray());
+					Mat generatedImg = suitsImg[idx].clone();
+					ANNPredictedSuit = ANNBlackCard->predict(formImageData(generatedImg), noArray());
+					suitPredictions.push_back(ANNPredictedSuit);
+					for (int genIt = 0; genIt < 4; genIt++)
+					{
+						generatedImg = generateImg(suitsImg[idx], true, true, 5, 2, 2);
+						ANNPredictedSuit = ANNBlackCard->predict(formImageData(generatedImg), noArray());
+						suitPredictions.push_back(ANNPredictedSuit);
+					}
 				}
 				else
 				{
-					predictedSuit = ANNRedCard->predict(suitsData.row(idx), noArray()) + 2;
+					Mat generatedImg = suitsImg[idx].clone();
+					ANNPredictedSuit = ANNRedCard->predict(formImageData(generatedImg), noArray());
+					suitPredictions.push_back(ANNPredictedSuit + 2);
+					for (int genIt = 0; genIt < 4; genIt++)
+					{
+						generatedImg = generateImg(suitsImg[idx], true, true, 5, 2, 2);
+						ANNPredictedSuit = ANNRedCard->predict(formImageData(generatedImg), noArray());
+						suitPredictions.push_back(ANNPredictedSuit + 2);
+					}
 				}
-				int predictedRank = ANNCardRank->predict(ranksData.row(idx), noArray());
+				
+				for (int ii = 0; ii < 5; ii++)
+				{
+					Mat KNNSuitResult;
+					KNNCardSuit->findNearest(suitDescriptors[idx][ii], 60, KNNSuitResult);
+					int KNNPredictedSuit = static_cast<int>(KNNSuitResult.at<float>(0, 0));
+					suitPredictions.push_back(KNNPredictedSuit);
+				}
+				
+				int predictedSuit = findFrequentClass(suitPredictions);
+				int predictedRank = ANNCardRank->predict(formImageData(ranksImg[idx]), noArray());
 
 				suitsCoverImg[predictedSuit].copyTo(cards[idx], suitsCoverMask[predictedSuit]);
-				cout << "Predicted suit for card #" << idx + 1 << " "  << predictedSuit  << endl;
-				cout << "Predicted rank for card #" << idx + 1 << " " << rankNames[predictedRank] << endl;
+	
+				cout << "Predicted suit for card #" << idx + 1 << ": "  << predictedSuit << endl;
+				cout << "Predicted rank for card #" << idx + 1 << ": " << rankNames[predictedRank] << endl;
 			}
 
-			result = cards[0].clone();
+			Mat result = cards[0].clone();
 			for (int idx = 1; idx < cards.size(); idx++)
 			{
 				Mat currentCard = cards[idx].clone();
