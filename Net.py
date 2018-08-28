@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.optim as opt
 import torchvision as Tv
 class Net(nn.Module):
-    def __init__(self, num_classes = 17, img_width_heigh = 32, channels = 1):
+    def __init__(self, num_classes = 17, img_width_heigh = 32, channels = 3):
         super(Net, self).__init__()
 
         self.num_classes = num_classes
@@ -17,9 +17,8 @@ class Net(nn.Module):
         self.Conv3 = nn.Conv2d(16, 32, 4 , 1 ,1)
         self.Conv4 = nn.Conv2d(32,32,4,1,1)
 
-        self.Lin1 = nn.Linear(416,self.num_classes)
-        self.SM1 = nn.Softmax(self.num_classes)
-        self.Pool = nn.MaxPool2d(kernel_size=2)
+        self.SM = nn.Softmax2d()
+        self.Pool = nn.AdaptiveMaxPool2d(32)
         self.ReLU = nn.ReLU()
         self.BN16 = nn.BatchNorm2d(16)
         self.BN32 = nn.BatchNorm2d(32)
@@ -43,7 +42,7 @@ class Net(nn.Module):
         out = self.BN32(out)
         out = self.ReLU(out)
 
-        out = self.Lin1(out)
+        out = self.SM(out)
 
         return out
 

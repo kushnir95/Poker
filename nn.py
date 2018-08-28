@@ -13,8 +13,8 @@ import torchvision.models as models
 from collections import OrderedDict
 
 #Hyperparams and constants
-threads = 8 #num_workers
-batch = 16
+threads = 0 #num_workers
+batch = 32
 learning_rate = 0.01
 img_size = 32
 
@@ -29,8 +29,8 @@ train_transforms = transforms.Compose([transforms.Resize(img_size),
                                        transforms.RandomResizedCrop(img_size),
                                        transforms.RandomHorizontalFlip(),
                                        transforms.ToTensor(),
-                                       transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                            std=[0.229, 0.224, 0.225])])
+                                       transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                                                            std=[0.5, 0.5, 0.5])])
 
 
 
@@ -80,6 +80,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             output = model.forward(images)
+
             loss = loss_func(output, labels)
             loss_func.backward()
             optimizer.step()
