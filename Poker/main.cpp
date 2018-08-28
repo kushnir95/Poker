@@ -17,7 +17,7 @@ const int scaledSuitWidth = 20;
 const int scaledSuitHeight = 20;
 
 const int originalRankWidth = 35;
-const int originalRankHeight = 60;
+const int originalRankHeight = 55;
 const int scaledRankWidth = 20;
 const int scaledRankHeight = 40;
 const int nRank = 4;
@@ -30,6 +30,26 @@ Mat trainX, trainY;
 vector<int> trainLabels;
 
 //Function getCardColor returns color of the card(black - 0; red - 1)
+int getCardColor(const Mat& cardImg)
+{
+	const int threshold = 50;
+	int goodPixelsAmount = 0;
+	for (int y = 0; y < cardImg.size().height; y++)
+	{
+		for (int x = 0; x < cardImg.size().width; x++)
+		{
+			Vec3b currentPixel = cardImg.at<Vec3b>(y, x);
+			if ((currentPixel.val[2] - currentPixel.val[0] >= threshold) && (currentPixel.val[2] - currentPixel.val[1] >= threshold))
+			{
+				goodPixelsAmount++;
+			}
+		}
+	}
+
+	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.05);
+}
+
+/*
 int getCardColor(const Mat& cardImg)
 {
 	const int hueThreshold = 125;
@@ -49,8 +69,10 @@ int getCardColor(const Mat& cardImg)
 		}
 	}
 
-	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.1);
+	return static_cast<int>((1.0 * goodPixelsAmount / cardImg.size().area()) > 0.07);
 }
+
+*/
 
 void preprocessImage(Mat &img, const Size &sz)
 {
@@ -266,7 +288,7 @@ int findFrequentClass(vector<int> v)
 
 int main()
 {
-	Mat suitsCoverImg[4], suitsCoverMask[4];
+	Mat suitsCoverImg[4], suitsCoverMask[4], ranksCoverImg[5], ranksCoverMask[5];
 
 	suitsCoverImg[0] = imread("./images/spade.jpg");
 	suitsCoverImg[1] = imread("./images/club.png");
@@ -278,10 +300,30 @@ int main()
 	suitsCoverMask[2] = imread("./images/heart_mask.png");
 	suitsCoverMask[3] = imread("./images/diamond_mask.jpg");
 
+	ranksCoverImg[0] = imread("./images/Ten.jpg");
+	ranksCoverImg[1] = imread("./images/Jack.jpg");
+	ranksCoverImg[2] = imread("./images/Queen.jpg");
+	ranksCoverImg[3] = imread("./images/King.jpg");
+	ranksCoverImg[4] = imread("./images/Ace.jpg");
+
+	ranksCoverMask[0] = imread("./images/Ten_mask.jpg");
+	ranksCoverMask[1] = imread("./images/Jack_mask.jpg");
+	ranksCoverMask[2] = imread("./images/Queen_mask.jpg");
+	ranksCoverMask[3] = imread("./images/King_mask.jpg");
+	ranksCoverMask[4] = imread("./images/Ace_mask.jpg");
+
+
 	for (int idx = 0; idx < 4; idx++)
 	{
 		resize(suitsCoverImg[idx], suitsCoverImg[idx], Size(cardWidth, cardHeight));
 		resize(suitsCoverMask[idx], suitsCoverMask[idx], Size(cardWidth, cardHeight));
+
+	}
+
+	for (int idx = 0; idx < 5; idx++)
+	{
+		resize(ranksCoverMask[idx], ranksCoverMask[idx], Size(cardWidth, cardHeight));
+		resize(ranksCoverImg[idx], ranksCoverImg[idx], Size(cardWidth, cardHeight));
 	}
 
 	FileStorage ffsBlackCard("MLPBlackSuits.xml", FileStorage::READ);
@@ -462,18 +504,30 @@ int main()
 					Mat KNNSuitResult;
 					KNNCardSuit->findNearest(suitDescriptors[idx][ii], 60, KNNSuitResult);
 					int KNNPredictedSuit = static_cast<int>(KNNSuitResult.at<float>(0, 0));
-					suitPredictions.push_back(KNNPredictedSuit);
+					if ((cardsColors[idx] == 0 && KNNPredictedSuit < 2) || (cardsColors[idx] == 1 && KNNPredictedSuit > 1))
+					{
+						suitPredictions.push_back(KNNPredictedSuit);
+					}
 				}
 				
+				for (int k = 0; k < suitPredictions.size(); k++)
+				{
+					cout << suitPredictions[k] << " ";
+				}
+
+				cout << endl;
+
 				int predictedSuit = findFrequentClass(suitPredictions);
 				int predictedRank = ANNCardRank->predict(formImageData(ranksImg[idx]), noArray());
 
 				suitsCoverImg[predictedSuit].copyTo(cards[idx], suitsCoverMask[predictedSuit]);
-	
+				ranksCoverImg[predictedRank].copyTo(cards[idx], ranksCoverMask[predictedRank]);
 				cout << "Predicted suit for card #" << idx + 1 << ": "  << predictedSuit << endl;
 				cout << "Predicted rank for card #" << idx + 1 << ": " << rankNames[predictedRank] << endl;
 			}
 
+			cout << "==================" << endl;
+			
 			Mat result = cards[0].clone();
 			for (int idx = 1; idx < cards.size(); idx++)
 			{
